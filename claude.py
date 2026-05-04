@@ -1,6 +1,7 @@
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 from qiskit.circuit.classical import expr
+from qiskit_aer.noise import NoiseModel, depolarizing_error
 
 def build_xor(clbits_list, indices):
     """XOR of selected classical bits. Returns Clbit or expr."""
@@ -75,12 +76,29 @@ def teleport(n: int):
     qc.measure(0,     num_meas)
     qc.measure(n - 1, num_meas + 1)
 
-    sim = AerSimulator()
-    counts = sim.run(transpile(qc, sim), shots=4096).result().get_counts()
-    good = sum(v for k, v in counts.items() if k[0] == '0' and k[1] == '1')
-    print(f"n={n:2d}: |00> = {good/4096:.1%}")
+    # Noisy Simulator Setup
+    noise_model = NoiseModel()
+    error_1 = depolarizing_error(0.1, 1)
+    error_2 = depolarizing_error(0.02, 2)
+    noise_model.add_all_qubit_quantum_error(error_1, ['h', 'z', 'x'])
+    noise_model.add_all_qubit_quantum_error(error_2, ['cx', 'cz'])
+
+    # Uncomment for Noisy Model
+    # noisy_sim = AerSimulator(noise_model=noise_model)
+    # t_qc = transpile(qc, noisy_sim)
+    # counts = noisy_sim.run(t_qc, shots=4096).result().get_counts()
+    
+    # Uncomment for Ideal Model
+    # ideal_sim = AerSimulator()
+    # t_qc = transpile(qc, ideal_sim)
+    # counts = ideal_sim.run(t_qc, shots=4096).result().get_counts()
+    
+    # Check the last two bits (indices num_meas and num_meas+1)
+    # In Qiskit bitstring order, these are the first two characters from the right
+    good = sum(v for k, v in counts.items() if k[-(num_meas+1)] == '0' and k[-(num_meas+2)] == '0')
+    print(f"n={n:2d}: |00> success rate = {good/4096:.1%}")
     return counts
 
-# for n in [3, 4, 5, 6, 7, 8, 10]:
-for n in range(3, 6):
-    teleport(n)
+if __name__ == "__main__":
+    for n in range(3, 7):
+        teleport(n)

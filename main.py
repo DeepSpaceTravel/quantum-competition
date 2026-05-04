@@ -65,7 +65,6 @@ def dynamic_qc(qubit_num: int = 5):
     qc.measure(0, 0)
     qc.measure(qubit_num-1, 1)
 
-
     print(qc)
 
     simulator = AerSimulator()
