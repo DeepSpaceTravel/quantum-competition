@@ -3,6 +3,7 @@ from qiskit_aer import AerSimulator
 from qiskit.circuit.classical import expr
 from qiskit_aer.noise import NoiseModel, depolarizing_error
 
+
 def build_xor(clbits_list, indices):
     """XOR of selected classical bits. Returns Clbit or expr."""
     if not indices:
@@ -24,13 +25,12 @@ def if_nonzero(qc, condition, gate_fn):
         with qc.if_test((condition, 1)):
             gate_fn()
 
-def teleport(n: int):
+def build_dynamic_circuit(n: int):
     """
     Teleport qubit 1 of Bell state (q0,q1) to q(n-1).
     Measures q0 and q(n-1): should be |00>.
     """
     qc = QuantumCircuit(n, n)
-
     # 1. Bell state on q0, q1
     qc.h(0)
     qc.cx(0, 1)
@@ -72,33 +72,59 @@ def teleport(n: int):
     # 5. Verify: undo Bell state → should get |00>
     qc.cx(0, n - 1)
     qc.h(0)
-    print(qc)
     qc.measure(0,     num_meas)
     qc.measure(n - 1, num_meas + 1)
+    print(qc)
 
+    return qc
+
+def build_swap_circuit(n: int):
+    qc = QuantumCircuit(n, n)
+    # 1. Bell state on q0, q1
+    qc.h(0)
+    qc.cx(0, 1)
+
+    for q in range(1, n-1):
+        # qc.swap(q, q+1)
+        qc.cx(q, q+1)
+        qc.cx(q+1, q)
+        qc.cx(q, q+1)
+
+    # 5. Verify: undo Bell state → should get |00>
+    qc.cx(0, n - 1)
+    qc.h(0)
+    qc.measure(0,     n-2)
+    qc.measure(n - 1, n-1)
+    print(qc)
+
+    return qc
+
+def build_noisy_model():
     # Noisy Simulator Setup
     noise_model = NoiseModel()
-    error_1 = depolarizing_error(0.1, 1)
+    error_1 = depolarizing_error(0.01, 1)
     error_2 = depolarizing_error(0.02, 2)
     noise_model.add_all_qubit_quantum_error(error_1, ['h', 'z', 'x'])
-    noise_model.add_all_qubit_quantum_error(error_2, ['cx', 'cz'])
+    noise_model.add_all_qubit_quantum_error(error_2, ['cx', 'cz', 'swap'])
+    return noise_model
 
-    # Uncomment for Noisy Model
-    # noisy_sim = AerSimulator(noise_model=noise_model)
-    # t_qc = transpile(qc, noisy_sim)
-    # counts = noisy_sim.run(t_qc, shots=4096).result().get_counts()
-    
-    # Uncomment for Ideal Model
-    # ideal_sim = AerSimulator()
-    # t_qc = transpile(qc, ideal_sim)
-    # counts = ideal_sim.run(t_qc, shots=4096).result().get_counts()
+def run_sim(n: int = 5):
+    dynamic_qc = build_dynamic_circuit(n)
+    swap_qc = build_swap_circuit(n)
+    noisy_sim = AerSimulator(noise_model=build_noisy_model())
+    t_dyn_qc = transpile(dynamic_qc, noisy_sim)
+    t_swap_qc = transpile(swap_qc, noisy_sim)
+    dynamic_counts = noisy_sim.run(t_dyn_qc, shots=4096).result().get_counts()
+    swap_counts = noisy_sim.run(t_swap_qc, shots=4096).result().get_counts()
     
     # Check the last two bits (indices num_meas and num_meas+1)
     # In Qiskit bitstring order, these are the first two characters from the right
-    good = sum(v for k, v in counts.items() if k[-(num_meas+1)] == '0' and k[-(num_meas+2)] == '0')
-    print(f"n={n:2d}: |00> success rate = {good/4096:.1%}")
-    return counts
+    dyn_good = sum(v for k, v in dynamic_counts.items() if k[-(n-1)] == '0' and k[-(n)] == '0')
+    swap_good = sum(v for k, v in swap_counts.items() if k[-(n-1)] == '0' and k[-(n)] == '0')
+    print(f"n={n:2d}: Dynamic |00> success rate = {dyn_good/4096:.1%}")
+    print(f"n={n:2d}: Swap |00> success rate = {swap_good/4096:.1%}")
+
 
 if __name__ == "__main__":
     for n in range(3, 7):
-        teleport(n)
+        run_sim(n)
